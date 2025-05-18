@@ -33,20 +33,22 @@ export async function GET(request: Request, context: RouteContext) {
       )
     }
 
-    // Transform the data to ensure it has the expected structure
+    // Transform the data to use camelCase for the frontend
     const transformedData = {
       ...data,
-      createdAt: data.created_at || data.createdAt,
-      updatedAt: data.updated_at || data.updatedAt || data.created_at || new Date().toISOString(),
+      // Use the snake_case values from the database
+      createdAt: data.created_at,
+      updatedAt: data.updated_at || data.created_at || new Date().toISOString(),
     }
+
+    // Remove the snake_case fields to avoid duplicates
+    delete transformedData.created_at
+    delete transformedData.updated_at
 
     return NextResponse.json(transformedData)
   } catch (error) {
     console.error("Error in GET page API:", error)
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
 
@@ -56,12 +58,26 @@ export async function PUT(request: Request, context: RouteContext) {
     const { id } = await Promise.resolve(context.params)
     const body = await request.json()
 
-    // Update the updated_at timestamp
-    body.updated_at = new Date().toISOString()
+    // Create a copy of the body to avoid mutating the original
+    const updateData = { ...body }
+
+    // Handle column name conversion
+    if ('createdAt' in updateData) {
+      updateData.created_at = updateData.createdAt
+      delete updateData.createdAt
+    }
+    
+    if ('updatedAt' in updateData) {
+      updateData.updated_at = updateData.updatedAt
+      delete updateData.updatedAt
+    }
+
+    // Always update the updated_at timestamp
+    updateData.updated_at = new Date().toISOString()
 
     const { data, error } = await supabase
       .from("pages")
-      .update(body)
+      .update(updateData)
       .eq("id", id)
       .select()
 
@@ -87,6 +103,10 @@ export async function PUT(request: Request, context: RouteContext) {
       updatedAt: data[0].updated_at,
     }
 
+    // Clean up any potential duplicate fields
+    delete transformedData.created_at
+    delete transformedData.updated_at
+
     return NextResponse.json(transformedData)
   } catch (error) {
     console.error("Error in PUT page API:", error)
@@ -102,6 +122,22 @@ export async function DELETE(request: Request, context: RouteContext) {
     const supabase = createServerClient()
     const { id } = await Promise.resolve(context.params)
 
+    // First, get the page to return some data before deletion
+    const { data: pageData, error: fetchError } = await supabase
+      .from("pages")
+      .select("*")
+      .eq("id", id)
+      .single()
+
+    if (fetchError || !pageData) {
+      console.error("Error finding page to delete:", fetchError)
+      return NextResponse.json(
+        { error: "Page not found" },
+        { status: 404 }
+      )
+    }
+
+    // Now delete the page
     const { error } = await supabase
       .from("pages")
       .delete()
@@ -115,7 +151,21 @@ export async function DELETE(request: Request, context: RouteContext) {
       )
     }
 
-    return NextResponse.json({ success: true })
+    // Return the deleted page data with consistent field names
+    const deletedPage = {
+      ...pageData,
+      createdAt: pageData.created_at,
+      updatedAt: pageData.updated_at
+    }
+    
+    // Clean up snake_case fields
+    delete deletedPage.created_at
+    delete deletedPage.updated_at
+
+    return NextResponse.json({ 
+      success: true,
+      data: deletedPage 
+    })
   } catch (error) {
     console.error("Error in DELETE page API:", error)
     return NextResponse.json(

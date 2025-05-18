@@ -1,93 +1,115 @@
-"use client"
-
-import { useState, useEffect } from "react"
-import type { Page } from "@/lib/page-builder"
-import { AccordionSidebarSection } from "@/components/website/accordion-sidebar-section"
+import { Fragment } from "react"
 import { RenderSection } from "@/components/website/render-section"
+import { AccordionSidebarSection } from "@/components/website/accordion-sidebar-section"
+import type { Page, Section } from "@/lib/page-builder"
+import { getProductsByIds } from "@/lib/products"
+import { cn } from "@/lib/utils"
 
 interface WebsitePageProps {
   page: Page
 }
 
-export function WebsitePage({ page }: WebsitePageProps) {
-  const [selectedProducts, setSelectedProducts] = useState<Record<string, any[]>>({})
-  const [loading, setLoading] = useState<Record<string, boolean>>({})
+export async function WebsitePage({ page }: WebsitePageProps) {
+  // Create a mapping of section IDs to HTML IDs for smooth scrolling
+  const sectionIds: Record<string, string> = {}
+  page.sections.forEach((section) => {
+    // For product grid sections, use the section ID as is
+    // For other sections, prefix with 'section-'
+    sectionIds[section.id] = section.type === 'product-grid' 
+      ? section.id 
+      : `section-${section.id}`
+  })
 
-  // Fetch products for product grid sections
-  const fetchProductsForSection = async (sectionId: string, productIds: string[]) => {
-    if (!productIds.length) return []
+  // Find accordion sidebar sections and product grid sections
+  const accordionSidebarSections = page.sections.filter((section) => section.type === "accordion-sidebar")
+  const otherSections = page.sections.filter((section) => section.type !== "accordion-sidebar")
 
-    setLoading((prev) => ({ ...prev, [sectionId]: true }))
-
-    try {
-      const response = await fetch(`/api/products?ids=${productIds.join(",")}`)
-      if (!response.ok) throw new Error("Failed to fetch products")
-
-      const products = await response.json()
-
-      setSelectedProducts((prev) => ({
-        ...prev,
-        [sectionId]: products,
-      }))
-
-      return products
-    } catch (error) {
-      console.error("Error fetching products:", error)
-      return []
-    } finally {
-      setLoading((prev) => ({ ...prev, [sectionId]: false }))
-    }
+  // If there are no accordion sidebar sections, render all sections normally
+  if (accordionSidebarSections.length === 0) {
+    return (
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        {page.sections.map((section) => (
+          <div key={section.id} id={sectionIds[section.id]} className="mb-12 last:mb-0">
+            <RenderSection section={section} allSectionIds={sectionIds} />
+          </div>
+        ))}
+      </div>
+    )
   }
 
-  // Fetch products for all product grid sections on mount
-  useEffect(() => {
-    page.sections.forEach((section) => {
-      if (section.type === "product-grid" && section.productIds.length > 0) {
-        fetchProductsForSection(section.id, section.productIds)
-      }
-    })
-  }, [page.sections])
+  // Collect all product IDs from product-grid sections
+  const productGridSections = page.sections.filter(
+    (section): section is Section & { type: 'product-grid'; productIds: string[] } => 
+      section.type === 'product-grid' && 
+      'productIds' in section && 
+      Array.isArray(section.productIds) && 
+      section.productIds.length > 0
+  )
+  
+  const allProductIds = Array.from(new Set(
+    productGridSections.flatMap(section => section.productIds)
+  ))
 
-  // Find sections with accordion-sidebar type
-  const sidebarSections = page.sections.filter((section) => section.type === "accordion-sidebar")
-  const contentSections = page.sections.filter((section) => section.type !== "accordion-sidebar")
+  // Fetch all products needed for product-grid sections
+  const products = allProductIds.length > 0 ? await getProductsByIds(allProductIds) : []
+  const productsById = new Map(products.map(product => [product.id, product]))
 
+  // If there are accordion sidebar sections, render them alongside other sections
   return (
-    <div className="mx-auto max-w-7xl">
-      {sidebarSections.length > 0 && contentSections.length > 0 ? (
-        <div className="flex flex-col md:flex-row">
-          {/* Render sidebar sections */}
-          <div className="w-full md:w-1/4 md:max-w-[250px] p-4">
-            {sidebarSections.map((section) => (
-              <AccordionSidebarSection key={section.id} section={section} />
-            ))}
-          </div>
+    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      {accordionSidebarSections.map((accordionSection, index) => {
+        // Find the next accordion section (if any)
+        const nextAccordionIndex = accordionSidebarSections.findIndex(
+          (s, i) => i > index && s.type === "accordion-sidebar",
+        )
 
-          {/* Render content sections */}
-          <div className="flex-1 p-4">
-            {contentSections.map((section) => (
-              <RenderSection
-                key={section.id}
-                section={section}
-                products={selectedProducts[section.id] || []}
-                loading={loading[section.id] || false}
-              />
-            ))}
-          </div>
-        </div>
-      ) : (
-        // If no sidebar sections, render all sections normally
-        <div className="p-4">
-          {page.sections.map((section) => (
-            <RenderSection
-              key={section.id}
-              section={section}
-              products={selectedProducts[section.id] || []}
-              loading={loading[section.id] || false}
-            />
-          ))}
-        </div>
-      )}
+        // Get sections between this accordion and the next one (or the end)
+        const sectionsBetween =
+          nextAccordionIndex !== -1
+            ? otherSections.slice(
+                otherSections.findIndex((s) => s.id === accordionSection.id) + 1,
+                otherSections.findIndex((s) => s.id === accordionSidebarSections[nextAccordionIndex].id),
+              )
+            : otherSections.slice(otherSections.findIndex((s) => s.id === accordionSection.id) + 1)
+
+        return (
+          <Fragment key={accordionSection.id}>
+            <div className="mb-12 flex flex-col gap-8 md:flex-row">
+              <div className={cn(
+                "w-full md:w-1/4",
+                accordionSection.stickyOnDesktop && "md:sticky md:top-4 md:self-start"
+              )}>
+                <AccordionSidebarSection 
+                  section={{
+                    ...accordionSection,
+                    // Ensure the section has a title
+                    title: accordionSection.title || 'Categories'
+                  }} 
+                  allSectionIds={sectionIds} 
+                />
+              </div>
+              <div className="w-full md:w-3/4">
+                {sectionsBetween.map((section) => {
+                  // For product-grid sections, filter products by the section's productIds
+                  const sectionProducts = section.type === 'product-grid' && 'productIds' in section && Array.isArray(section.productIds)
+                    ? section.productIds.map(id => productsById.get(id)).filter(Boolean)
+                    : []
+                    
+                  return (
+                    <div key={section.id} id={sectionIds[section.id]} className="mb-12 last:mb-0">
+                      <RenderSection 
+                        section={section} 
+                        allSectionIds={sectionIds}
+                        products={sectionProducts}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </Fragment>
+        )
+      })}
     </div>
   )
 }

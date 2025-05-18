@@ -44,18 +44,14 @@ export function PageEditor({ pageId }: PageEditorProps) {
       try {
         // Check if we're creating a new page
         if (pageId === "new") {
-          const now = new Date().toISOString()
           setPage({
-            id: pageId,
-            title: "Untitled Page",
-            slug: `page-${Date.now()}`,
+            id: "new",
+            title: "New Page",
+            slug: "new-page",
             status: "draft",
             sections: [],
-            // Include both formats to be safe
-            created_at: now,
-            updated_at: now,
-            createdAt: now,
-            updatedAt: now,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
           })
           setLoading(false)
           return
@@ -85,44 +81,18 @@ export function PageEditor({ pageId }: PageEditorProps) {
 
     setSaving(true)
     try {
-      // Prepare the data to send, ensuring we use the correct field names
-      const pageData = {
-        ...page,
-        // Ensure we're using snake_case for the API
-        created_at: page.createdAt || new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        // Remove any undefined or null values that might cause issues
-        sections: page.sections || []
-      }
-
-      // Remove any client-only fields that shouldn't be sent to the server
-      // Using type assertion to make TypeScript happy
-      const pageDataForApi = pageData as Omit<typeof pageData, 'createdAt' | 'updatedAt'>;
-      delete (pageData as any).createdAt;
-      delete (pageData as any).updatedAt;
-
       const response = await fetch(`/api/pages/${pageId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(pageDataForApi),
+        body: JSON.stringify(page),
       })
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || "Failed to save page")
-      }
+      if (!response.ok) throw new Error("Failed to save page")
 
       const updatedPage = await response.json()
-      
-      // Update the local state with the response data
-      setPage({
-        ...updatedPage,
-        // Ensure we maintain the expected camelCase in the frontend
-        createdAt: updatedPage.created_at || updatedPage.createdAt,
-        updatedAt: updatedPage.updated_at || updatedPage.updatedAt,
-      })
+      setPage(updatedPage)
 
       toast({
         title: "Success",
@@ -441,6 +411,7 @@ export function PageEditor({ pageId }: PageEditorProps) {
                                 section={section}
                                 onUpdate={(updatedSection) => handleUpdateSection(section.id, updatedSection)}
                                 onDelete={() => handleDeleteSection(section.id)}
+                                allSections={page.sections}
                               />
                             ))}
                           </div>

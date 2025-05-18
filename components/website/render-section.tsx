@@ -10,6 +10,7 @@ type SectionRendererProps = {
   className?: string
   products?: any[]
   loading?: boolean
+  allSectionIds?: Record<string, string>
 }
 
 export function RenderSection({ section, className, products = [], loading = false }: SectionRendererProps) {
@@ -63,7 +64,11 @@ export function RenderSection({ section, className, products = [], loading = fal
 
     case "product-grid":
       return (
-        <div className={cn("bg-white py-16", className)}>
+        <div 
+          id={section.id} 
+          className={cn("bg-white py-16 scroll-mt-16", className)}
+          data-section-id={section.id}
+        >
           <div className="container mx-auto px-4">
             <div className="text-center">
               <h2 className="text-3xl font-bold text-gray-900">{section.title}</h2>
@@ -118,13 +123,16 @@ export function RenderSection({ section, className, products = [], loading = fal
               {section.testimonials.map((testimonial) => (
                 <div key={testimonial.id} className="rounded-lg bg-white p-6 shadow">
                   <div className="mb-4 flex items-center">
-                    {[...Array(5)].map((_, i) => (
-                      <Star
-                        key={i}
-                        className={`h-5 w-5 ${i < testimonial.rating ? 'text-yellow-400' : 'text-gray-300'}`}
-                        fill={i < testimonial.rating ? 'currentColor' : 'none'}
-                      />
-                    ))}
+                    {[...Array(5)].map((_, i) => {
+                      const rating = testimonial.rating ?? 0
+                      return (
+                        <Star
+                          key={i}
+                          className={`h-5 w-5 ${i < rating ? 'text-yellow-400' : 'text-gray-300'}`}
+                          fill={i < rating ? 'currentColor' : 'none'}
+                        />
+                      )
+                    })}
                   </div>
                   <p className="mb-4 text-gray-600">"{testimonial.content}"</p>
                   <div>

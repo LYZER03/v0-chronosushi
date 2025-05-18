@@ -11,28 +11,20 @@ export const metadata: Metadata = {
   description: "Admin dashboard for restaurant management",
 }
 
-// This is a workaround to prevent the hydration mismatch
-// We'll suppress the warning since we know what we're doing
-const suppressHydrationWarning = true
-
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
   return (
-    <html 
-      lang="en" 
-      suppressHydrationWarning={suppressHydrationWarning}
-    >
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <ThemeProvider 
           attribute="class" 
           defaultTheme="light" 
-          enableSystem 
+          enableSystem={false} 
           disableTransitionOnChange
-          // Force a consistent theme on initial render
-          enableColorScheme={false}
+          storageKey="chronosushi-theme"
         >
           {children}
         </ThemeProvider>

@@ -2,87 +2,95 @@
 
 import type React from "react"
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useState } from "react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { LayoutGrid, ImageIcon, MessageSquareQuote, ShoppingBag, PhoneCall, AlignLeft } from "lucide-react"
+import { Plus, LayoutGrid, ImageIcon, MessageSquareQuote, ShoppingBag, Phone, Menu } from "lucide-react"
 import type { SectionType } from "@/lib/page-builder"
 
 interface AddSectionDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
   onAddSection: (sectionType: SectionType) => void
 }
 
-interface SectionOption {
-  type: SectionType
-  label: string
-  description: string
-  icon: React.ElementType
-}
+export function AddSectionDialog({ onAddSection }: AddSectionDialogProps) {
+  const [open, setOpen] = useState(false)
 
-const sectionOptions: SectionOption[] = [
-  {
-    type: "hero",
-    label: "Hero",
-    description: "A large banner with heading, subheading, and background image",
-    icon: LayoutGrid,
-  },
-  {
-    type: "text-image",
-    label: "Text with Image",
-    description: "Text content with an accompanying image",
-    icon: ImageIcon,
-  },
-  {
-    type: "testimonials",
-    label: "Testimonials",
-    description: "Customer reviews and testimonials",
-    icon: MessageSquareQuote,
-  },
-  {
-    type: "product-grid",
-    label: "Product Grid",
-    description: "Display products in a grid layout",
-    icon: ShoppingBag,
-  },
-  {
-    type: "contact-cta",
-    label: "Contact CTA",
-    description: "Call-to-action section for contact or reservation",
-    icon: PhoneCall,
-  },
-  {
-    type: "accordion-sidebar",
-    label: "Accordion Sidebar",
-    description: "Sidebar with expandable categories and subcategories",
-    icon: AlignLeft,
-  },
-]
+  const handleAddSection = (sectionType: SectionType) => {
+    onAddSection(sectionType)
+    setOpen(false)
+  }
 
-export function AddSectionDialog({ open, onOpenChange, onAddSection }: AddSectionDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="w-full">
+          <Plus className="mr-2 h-4 w-4" />
+          Add Section
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Add Section</DialogTitle>
         </DialogHeader>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {sectionOptions.map((option) => (
-            <Button
-              key={option.type}
-              variant="outline"
-              className="flex h-auto flex-col items-start gap-2 p-4 text-left"
-              onClick={() => onAddSection(option.type)}
-            >
-              <div className="flex w-full items-center gap-2">
-                <option.icon className="h-5 w-5" />
-                <span className="font-medium">{option.label}</span>
-              </div>
-              <p className="text-xs text-muted-foreground">{option.description}</p>
-            </Button>
-          ))}
+        <div className="grid grid-cols-2 gap-4 pt-4">
+          <SectionOption
+            icon={<LayoutGrid className="h-10 w-10" />}
+            title="Hero"
+            description="Large banner with heading, subheading, and optional CTA"
+            onClick={() => handleAddSection("hero")}
+          />
+          <SectionOption
+            icon={<ImageIcon className="h-10 w-10" />}
+            title="Text with Image"
+            description="Text content with an image on the left or right"
+            onClick={() => handleAddSection("text-image")}
+          />
+          <SectionOption
+            icon={<MessageSquareQuote className="h-10 w-10" />}
+            title="Testimonials"
+            description="Customer testimonials with ratings"
+            onClick={() => handleAddSection("testimonials")}
+          />
+          <SectionOption
+            icon={<ShoppingBag className="h-10 w-10" />}
+            title="Product Grid"
+            description="Grid of products with images and details"
+            onClick={() => handleAddSection("product-grid")}
+          />
+          <SectionOption
+            icon={<Phone className="h-10 w-10" />}
+            title="Contact CTA"
+            description="Call-to-action section with button"
+            onClick={() => handleAddSection("contact-cta")}
+          />
+          <SectionOption
+            icon={<Menu className="h-10 w-10" />}
+            title="Accordion Sidebar"
+            description="Sidebar with expandable categories linked to product sections"
+            onClick={() => handleAddSection("accordion-sidebar")}
+          />
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+interface SectionOptionProps {
+  icon: React.ReactNode
+  title: string
+  description: string
+  onClick: () => void
+}
+
+function SectionOption({ icon, title, description, onClick }: SectionOptionProps) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center rounded-lg border border-muted p-4 text-center transition-colors hover:bg-muted/50"
+    >
+      <div className="mb-2 text-primary">{icon}</div>
+      <h3 className="mb-1 text-sm font-medium">{title}</h3>
+      <p className="text-xs text-muted-foreground">{description}</p>
+    </button>
   )
 }
