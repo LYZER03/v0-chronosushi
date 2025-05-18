@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   type ColumnDef,
   flexRender,
@@ -35,25 +35,51 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { type Order, type OrderStatus, orders as initialOrders } from "@/lib/data"
+import type { Order, OrderStatus } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { useToast } from "@/hooks/use-toast"
 
 export function OrdersPage() {
-  const [orders, setOrders] = useState<Order[]>(initialOrders)
+  const [orders, setOrders] = useState<Order[]>([])
+  const [loading, setLoading] = useState(true)
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<string>("all")
+  const { toast } = useToast()
+
+  // Fetch orders
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        const response = await fetch("/api/orders")
+        if (!response.ok) throw new Error("Failed to fetch orders")
+        const data = await response.json()
+        setOrders(data)
+      } catch (error) {
+        console.error("Error fetching orders:", error)
+        toast({
+          title: "Error",
+          description: "Failed to load orders",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchOrders()
+  }, [toast])
 
   const columns: ColumnDef<Order>[] = [
     {
       accessorKey: "id",
       header: "Order ID",
-      cell: ({ row }) => <div className="font-medium">{row.getValue("id")}</div>,
+      cell: ({ row }) => <div className="font-medium">{row.getValue("id").substring(0, 8)}...</div>,
     },
     {
-      accessorKey: "customerName",
+      accessorKey: "customer_name",
       header: ({ column }) => {
         return (
           <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
@@ -62,10 +88,10 @@ export function OrdersPage() {
           </Button>
         )
       },
-      cell: ({ row }) => <div>{row.getValue("customerName")}</div>,
+      cell: ({ row }) => <div>{row.getValue("customer_name")}</div>,
     },
     {
-      accessorKey: "date",
+      accessorKey: "created_at",
       header: ({ column }) => {
         return (
           <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
@@ -75,7 +101,7 @@ export function OrdersPage() {
         )
       },
       cell: ({ row }) => {
-        const date = new Date(row.getValue("date"))
+        const date = new Date(row.getValue("created_at"))
         return <div>{date.toLocaleString()}</div>
       },
     },
@@ -130,19 +156,13 @@ export function OrdersPage() {
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onClick={() => {
-                  const updatedOrders = orders.map((o) => (o.id === order.id ? { ...o, status: "delivered" } : o))
-                  setOrders(updatedOrders)
-                }}
+                onClick={() => handleUpdateOrderStatus(order.id, "delivered")}
                 disabled={order.status === "delivered" || order.status === "canceled"}
               >
                 Mark as Delivered
               </DropdownMenuItem>
               <DropdownMenuItem
-                onClick={() => {
-                  const updatedOrders = orders.map((o) => (o.id === order.id ? { ...o, status: "canceled" } : o))
-                  setOrders(updatedOrders)
-                }}
+                onClick={() => handleUpdateOrderStatus(order.id, "canceled")}
                 disabled={order.status === "delivered" || order.status === "canceled"}
                 className="text-red-600"
               >
@@ -172,11 +192,42 @@ export function OrdersPage() {
     },
   })
 
-  const handleUpdateOrderStatus = (orderId: string, status: OrderStatus) => {
-    const updatedOrders = orders.map((order) => (order.id === orderId ? { ...order, status } : order))
-    setOrders(updatedOrders)
-    setIsDialogOpen(false)
-    setSelectedOrder(null)
+  const handleUpdateOrderStatus = async (orderId: string, status: OrderStatus) => {
+    try {
+      const response = await fetch(`/api/orders/${orderId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status }),
+      })
+
+      if (!response.ok) throw new Error("Failed to update order status")
+
+      const updatedOrder = await response.json()
+
+      setOrders(orders.map((order) => (order.id === orderId ? { ...order, status } : order)))
+
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder({ ...selectedOrder, status })
+      }
+
+      toast({
+        title: "Success",
+        description: `Order status updated to ${status}`,
+      })
+    } catch (error) {
+      console.error("Error updating order status:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update order status",
+        variant: "destructive",
+      })
+    }
+  }
+
+  if (loading) {
+    return <div className="flex justify-center p-8">Loading orders...</div>
   }
 
   return (
@@ -209,8 +260,8 @@ export function OrdersPage() {
             <Search className="h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search orders..."
-              value={(table.getColumn("customerName")?.getFilterValue() as string) ?? ""}
-              onChange={(event) => table.getColumn("customerName")?.setFilterValue(event.target.value)}
+              value={(table.getColumn("customer_name")?.getFilterValue() as string) ?? ""}
+              onChange={(event) => table.getColumn("customer_name")?.setFilterValue(event.target.value)}
               className="h-9"
             />
           </div>
@@ -277,13 +328,19 @@ export function OrdersPage() {
             <DialogHeader>
               <DialogTitle>Order Details</DialogTitle>
               <DialogDescription>
-                Order #{selectedOrder.id} - {new Date(selectedOrder.date).toLocaleString()}
+                Order #{selectedOrder.id.substring(0, 8)}... - {new Date(selectedOrder.created_at).toLocaleString()}
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <h3 className="font-medium">Customer</h3>
-                <p>{selectedOrder.customerName}</p>
+                <p>{selectedOrder.customer_name}</p>
+                {selectedOrder.customer_email && (
+                  <p className="text-sm text-muted-foreground">{selectedOrder.customer_email}</p>
+                )}
+                {selectedOrder.customer_phone && (
+                  <p className="text-sm text-muted-foreground">{selectedOrder.customer_phone}</p>
+                )}
               </div>
               <div className="grid gap-2">
                 <h3 className="font-medium">Status</h3>
@@ -320,12 +377,16 @@ export function OrdersPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {selectedOrder.items.map((item) => (
-                        <TableRow key={item.productId}>
-                          <TableCell>{item.name}</TableCell>
+                      {selectedOrder.items?.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>{item.product_name}</TableCell>
                           <TableCell className="text-right">{item.quantity}</TableCell>
-                          <TableCell className="text-right">${item.price.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">${(item.quantity * item.price).toFixed(2)}</TableCell>
+                          <TableCell className="text-right">
+                            ${Number.parseFloat(item.price.toString()).toFixed(2)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            ${(item.quantity * Number.parseFloat(item.price.toString())).toFixed(2)}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -336,7 +397,7 @@ export function OrdersPage() {
                 <div className="text-right">
                   <div className="flex items-center justify-between">
                     <span className="font-medium">Total:</span>
-                    <span className="font-bold">${selectedOrder.total.toFixed(2)}</span>
+                    <span className="font-bold">${Number.parseFloat(selectedOrder.total.toString()).toFixed(2)}</span>
                   </div>
                 </div>
               </div>

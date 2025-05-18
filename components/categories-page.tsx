@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   type ColumnDef,
   flexRender,
@@ -37,16 +37,55 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { type Category, categories as initialCategories } from "@/lib/data"
+import type { Category } from "@/lib/types"
+import { useToast } from "@/hooks/use-toast"
 
 export function CategoriesPage() {
-  const [categories, setCategories] = useState<Category[]>(initialCategories)
+  const [categories, setCategories] = useState<Category[]>([])
+  const [loading, setLoading] = useState(true)
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const { toast } = useToast()
 
-  const columns: ColumnDef<Category>[] = [
+  // Fetch categories
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await fetch("/api/categories")
+        if (!response.ok) throw new Error("Failed to fetch categories")
+        const data = await response.json()
+
+        // Add product count (this would ideally be done on the server)
+        const categoriesWithCount = await Promise.all(
+          data.map(async (category: Category) => {
+            const productsResponse = await fetch("/api/products")
+            if (!productsResponse.ok) throw new Error("Failed to fetch products")
+            const products = await productsResponse.json()
+
+            const productCount = products.filter((p: any) => p.category_id === category.id).length
+            return { ...category, productCount }
+          }),
+        )
+
+        setCategories(categoriesWithCount)
+      } catch (error) {
+        console.error("Error fetching categories:", error)
+        toast({
+          title: "Error",
+          description: "Failed to load categories",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchCategories()
+  }, [toast])
+
+  const columns: ColumnDef<Category & { productCount: number }>[] = [
     {
       accessorKey: "name",
       header: ({ column }) => {
@@ -62,7 +101,7 @@ export function CategoriesPage() {
     {
       accessorKey: "description",
       header: "Description",
-      cell: ({ row }) => <div>{row.getValue("description")}</div>,
+      cell: ({ row }) => <div>{row.getValue("description") || "-"}</div>,
     },
     {
       accessorKey: "productCount",
@@ -101,9 +140,7 @@ export function CategoriesPage() {
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onClick={() => {
-                  setCategories(categories.filter((c) => c.id !== category.id))
-                }}
+                onClick={() => handleDeleteCategory(category.id)}
                 className="text-red-600"
                 disabled={category.productCount > 0}
               >
@@ -131,19 +168,99 @@ export function CategoriesPage() {
     },
   })
 
-  const handleAddCategory = (category: Omit<Category, "id">) => {
-    const newCategory: Category = {
-      ...category,
-      id: `c${categories.length + 1}`,
+  const handleAddCategory = async (category: Omit<Category, "id" | "created_at" | "updated_at">) => {
+    try {
+      const response = await fetch("/api/categories", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(category),
+      })
+
+      if (!response.ok) throw new Error("Failed to add category")
+
+      const newCategory = await response.json()
+      setCategories([...categories, { ...newCategory, productCount: 0 }])
+      setIsDialogOpen(false)
+
+      toast({
+        title: "Success",
+        description: "Category added successfully",
+      })
+    } catch (error) {
+      console.error("Error adding category:", error)
+      toast({
+        title: "Error",
+        description: "Failed to add category",
+        variant: "destructive",
+      })
     }
-    setCategories([...categories, newCategory])
-    setIsDialogOpen(false)
   }
 
-  const handleUpdateCategory = (category: Category) => {
-    setCategories(categories.map((c) => (c.id === category.id ? category : c)))
-    setIsDialogOpen(false)
-    setEditingCategory(null)
+  const handleUpdateCategory = async (category: Partial<Category>) => {
+    if (!editingCategory) return
+
+    try {
+      const response = await fetch(`/api/categories/${editingCategory.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(category),
+      })
+
+      if (!response.ok) throw new Error("Failed to update category")
+
+      const updatedCategory = await response.json()
+
+      setCategories(
+        categories.map((c) => (c.id === editingCategory.id ? { ...updatedCategory, productCount: c.productCount } : c)),
+      )
+
+      setIsDialogOpen(false)
+      setEditingCategory(null)
+
+      toast({
+        title: "Success",
+        description: "Category updated successfully",
+      })
+    } catch (error) {
+      console.error("Error updating category:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update category",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleDeleteCategory = async (id: string) => {
+    try {
+      const response = await fetch(`/api/categories/${id}`, {
+        method: "DELETE",
+      })
+
+      if (!response.ok) throw new Error("Failed to delete category")
+
+      setCategories(categories.filter((c) => c.id !== id))
+
+      toast({
+        title: "Success",
+        description: "Category deleted successfully",
+      })
+    } catch (error) {
+      console.error("Error deleting category:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete category",
+        variant: "destructive",
+      })
+    }
+  }
+
+  if (loading) {
+    return <div className="flex justify-center p-8">Loading categories...</div>
   }
 
   return (
@@ -184,13 +301,9 @@ export function CategoriesPage() {
                 initialData={editingCategory || undefined}
                 onSubmit={(data) => {
                   if (editingCategory) {
-                    handleUpdateCategory({
-                      ...data,
-                      id: editingCategory.id,
-                      productCount: editingCategory.productCount,
-                    })
+                    handleUpdateCategory(data)
                   } else {
-                    handleAddCategory({ ...data, productCount: 0 })
+                    handleAddCategory(data)
                   }
                 }}
               />
@@ -257,12 +370,12 @@ export function CategoriesPage() {
 }
 
 interface CategoryFormProps {
-  initialData?: Omit<Category, "id" | "productCount">
-  onSubmit: (data: Omit<Category, "id" | "productCount">) => void
+  initialData?: Category
+  onSubmit: (data: Omit<Category, "id" | "created_at" | "updated_at">) => void
 }
 
 function CategoryForm({ initialData, onSubmit }: CategoryFormProps) {
-  const [formData, setFormData] = useState<Omit<Category, "id" | "productCount">>({
+  const [formData, setFormData] = useState<Omit<Category, "id" | "created_at" | "updated_at">>({
     name: initialData?.name || "",
     description: initialData?.description || "",
   })
@@ -293,10 +406,9 @@ function CategoryForm({ initialData, onSubmit }: CategoryFormProps) {
           <Textarea
             id="description"
             name="description"
-            value={formData.description}
+            value={formData.description || ""}
             onChange={handleChange}
             className="col-span-3"
-            required
           />
         </div>
       </div>

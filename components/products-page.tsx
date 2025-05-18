@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
 import {
   type ColumnDef,
@@ -42,16 +42,50 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { type Product, categories, products as initialProducts } from "@/lib/data"
+import type { Product, Category } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
+import { useToast } from "@/hooks/use-toast"
 
 export function ProductsPage() {
-  const [products, setProducts] = useState<Product[]>(initialProducts)
+  const [products, setProducts] = useState<Product[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [loading, setLoading] = useState(true)
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [selectedRows, setSelectedRows] = useState<string[]>([])
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const { toast } = useToast()
+
+  // Fetch products and categories
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Fetch products
+        const productsResponse = await fetch("/api/products")
+        if (!productsResponse.ok) throw new Error("Failed to fetch products")
+        const productsData = await productsResponse.json()
+        setProducts(productsData)
+
+        // Fetch categories
+        const categoriesResponse = await fetch("/api/categories")
+        if (!categoriesResponse.ok) throw new Error("Failed to fetch categories")
+        const categoriesData = await categoriesResponse.json()
+        setCategories(categoriesData)
+      } catch (error) {
+        console.error("Error fetching data:", error)
+        toast({
+          title: "Error",
+          description: "Failed to load data",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [toast])
 
   const columns: ColumnDef<Product>[] = [
     {
@@ -85,9 +119,9 @@ export function ProductsPage() {
       },
       cell: ({ row }) => (
         <div className="flex items-center gap-3">
-          {row.original.image && (
+          {row.original.image_url && (
             <Image
-              src={row.original.image || "/placeholder.svg"}
+              src={row.original.image_url || "/placeholder.svg"}
               alt={row.original.name}
               width={40}
               height={40}
@@ -101,7 +135,7 @@ export function ProductsPage() {
     {
       accessorKey: "description",
       header: "Description",
-      cell: ({ row }) => <div className="max-w-[300px] truncate">{row.getValue("description")}</div>,
+      cell: ({ row }) => <div className="max-w-[300px] truncate">{row.getValue("description") || "-"}</div>,
     },
     {
       accessorKey: "price",
@@ -119,9 +153,13 @@ export function ProductsPage() {
       },
     },
     {
-      accessorKey: "category",
+      accessorKey: "category_id",
       header: "Category",
-      cell: ({ row }) => <Badge variant="outline">{row.getValue("category")}</Badge>,
+      cell: ({ row }) => {
+        const categoryId = row.getValue("category_id") as string
+        const category = categories.find((c) => c.id === categoryId)
+        return <Badge variant="outline">{category?.name || "Uncategorized"}</Badge>
+      },
     },
     {
       accessorKey: "available",
@@ -130,11 +168,28 @@ export function ProductsPage() {
         <div className="flex justify-center">
           <Switch
             checked={row.getValue("available")}
-            onCheckedChange={(checked) => {
-              const updatedProducts = products.map((product) =>
-                product.id === row.original.id ? { ...product, available: checked } : product,
-              )
-              setProducts(updatedProducts)
+            onCheckedChange={async (checked) => {
+              try {
+                const response = await fetch(`/api/products/${row.original.id}`, {
+                  method: "PUT",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ available: checked }),
+                })
+
+                if (!response.ok) throw new Error("Failed to update product")
+
+                const updatedProduct = await response.json()
+                setProducts(products.map((p) => (p.id === updatedProduct.id ? updatedProduct : p)))
+              } catch (error) {
+                console.error("Error updating product:", error)
+                toast({
+                  title: "Error",
+                  description: "Failed to update product availability",
+                  variant: "destructive",
+                })
+              }
             }}
           />
         </div>
@@ -164,12 +219,7 @@ export function ProductsPage() {
                 Edit
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => {
-                  setProducts(products.filter((p) => p.id !== product.id))
-                }}
-                className="text-red-600"
-              >
+              <DropdownMenuItem onClick={() => handleDeleteProduct(product.id)} className="text-red-600">
                 Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -201,25 +251,124 @@ export function ProductsPage() {
     },
   })
 
-  const handleAddProduct = (product: Omit<Product, "id">) => {
-    const newProduct: Product = {
-      ...product,
-      id: `p${products.length + 1}`,
+  const handleAddProduct = async (product: Omit<Product, "id" | "created_at" | "updated_at">) => {
+    try {
+      const response = await fetch("/api/products", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(product),
+      })
+
+      if (!response.ok) throw new Error("Failed to add product")
+
+      const newProduct = await response.json()
+      setProducts([...products, newProduct])
+      setIsDialogOpen(false)
+
+      toast({
+        title: "Success",
+        description: "Product added successfully",
+      })
+    } catch (error) {
+      console.error("Error adding product:", error)
+      toast({
+        title: "Error",
+        description: "Failed to add product",
+        variant: "destructive",
+      })
     }
-    setProducts([...products, newProduct])
-    setIsDialogOpen(false)
   }
 
-  const handleUpdateProduct = (product: Product) => {
-    setProducts(products.map((p) => (p.id === product.id ? product : p)))
-    setIsDialogOpen(false)
-    setEditingProduct(null)
+  const handleUpdateProduct = async (product: Partial<Product>) => {
+    if (!editingProduct) return
+
+    try {
+      const response = await fetch(`/api/products/${editingProduct.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(product),
+      })
+
+      if (!response.ok) throw new Error("Failed to update product")
+
+      const updatedProduct = await response.json()
+      setProducts(products.map((p) => (p.id === updatedProduct.id ? updatedProduct : p)))
+      setIsDialogOpen(false)
+      setEditingProduct(null)
+
+      toast({
+        title: "Success",
+        description: "Product updated successfully",
+      })
+    } catch (error) {
+      console.error("Error updating product:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update product",
+        variant: "destructive",
+      })
+    }
   }
 
-  const handleDeleteSelected = () => {
-    setProducts(products.filter((product) => !selectedRows.includes(product.id)))
-    setSelectedRows([])
-    table.resetRowSelection()
+  const handleDeleteProduct = async (id: string) => {
+    try {
+      const response = await fetch(`/api/products/${id}`, {
+        method: "DELETE",
+      })
+
+      if (!response.ok) throw new Error("Failed to delete product")
+
+      setProducts(products.filter((p) => p.id !== id))
+
+      toast({
+        title: "Success",
+        description: "Product deleted successfully",
+      })
+    } catch (error) {
+      console.error("Error deleting product:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete product",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleDeleteSelected = async () => {
+    try {
+      // Delete each selected product
+      await Promise.all(
+        selectedRows.map((id) =>
+          fetch(`/api/products/${id}`, {
+            method: "DELETE",
+          }),
+        ),
+      )
+
+      setProducts(products.filter((product) => !selectedRows.includes(product.id)))
+      setSelectedRows([])
+      table.resetRowSelection()
+
+      toast({
+        title: "Success",
+        description: `${selectedRows.length} product(s) deleted successfully`,
+      })
+    } catch (error) {
+      console.error("Error deleting products:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete selected products",
+        variant: "destructive",
+      })
+    }
+  }
+
+  if (loading) {
+    return <div className="flex justify-center p-8">Loading products...</div>
   }
 
   return (
@@ -264,9 +413,10 @@ export function ProductsPage() {
                 </DialogHeader>
                 <ProductForm
                   initialData={editingProduct || undefined}
+                  categories={categories}
                   onSubmit={(data) => {
                     if (editingProduct) {
-                      handleUpdateProduct({ ...data, id: editingProduct.id })
+                      handleUpdateProduct(data)
                     } else {
                       handleAddProduct(data)
                     }
@@ -361,18 +511,19 @@ export function ProductsPage() {
 }
 
 interface ProductFormProps {
-  initialData?: Omit<Product, "id">
-  onSubmit: (data: Omit<Product, "id">) => void
+  initialData?: Product
+  categories: Category[]
+  onSubmit: (data: Omit<Product, "id" | "created_at" | "updated_at">) => void
 }
 
-function ProductForm({ initialData, onSubmit }: ProductFormProps) {
-  const [formData, setFormData] = useState<Omit<Product, "id">>({
+function ProductForm({ initialData, categories, onSubmit }: ProductFormProps) {
+  const [formData, setFormData] = useState<Omit<Product, "id" | "created_at" | "updated_at">>({
     name: initialData?.name || "",
     description: initialData?.description || "",
     price: initialData?.price || 0,
-    category: initialData?.category || "",
+    category_id: initialData?.category_id || "",
     available: initialData?.available ?? true,
-    image: initialData?.image || "/placeholder.svg?height=100&width=100",
+    image_url: initialData?.image_url || "",
   })
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -401,10 +552,9 @@ function ProductForm({ initialData, onSubmit }: ProductFormProps) {
           <Textarea
             id="description"
             name="description"
-            value={formData.description}
+            value={formData.description || ""}
             onChange={handleChange}
             className="col-span-3"
-            required
           />
         </div>
         <div className="grid grid-cols-4 items-center gap-4">
@@ -426,18 +576,34 @@ function ProductForm({ initialData, onSubmit }: ProductFormProps) {
           <Label htmlFor="category" className="text-right">
             Category
           </Label>
-          <Select value={formData.category} onValueChange={(value) => setFormData({ ...formData, category: value })}>
+          <Select
+            value={formData.category_id}
+            onValueChange={(value) => setFormData({ ...formData, category_id: value })}
+          >
             <SelectTrigger className="col-span-3">
               <SelectValue placeholder="Select a category" />
             </SelectTrigger>
             <SelectContent>
               {categories.map((category) => (
-                <SelectItem key={category.id} value={category.name}>
+                <SelectItem key={category.id} value={category.id}>
                   {category.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+        </div>
+        <div className="grid grid-cols-4 items-center gap-4">
+          <Label htmlFor="image_url" className="text-right">
+            Image URL
+          </Label>
+          <Input
+            id="image_url"
+            name="image_url"
+            value={formData.image_url || ""}
+            onChange={handleChange}
+            className="col-span-3"
+            placeholder="https://example.com/image.jpg"
+          />
         </div>
         <div className="grid grid-cols-4 items-center gap-4">
           <Label htmlFor="available" className="text-right">

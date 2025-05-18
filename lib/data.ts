@@ -1,4 +1,3 @@
-// Types
 export type OrderStatus = "pending" | "preparing" | "delivered" | "canceled"
 
 export interface Product {

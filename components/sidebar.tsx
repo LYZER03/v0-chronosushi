@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { BarChart3, ShoppingBag, LayoutGrid, ClipboardList, Settings, X } from "lucide-react"
+import { BarChart3, ShoppingBag, LayoutGrid, ClipboardList, Settings, X, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -36,6 +36,11 @@ export function Sidebar({ open, onOpenChange }: SidebarProps) {
       name: "Orders",
       path: "/orders",
       icon: ClipboardList,
+    },
+    {
+      name: "Pages",
+      path: "/pages",
+      icon: FileText,
     },
     {
       name: "Settings",

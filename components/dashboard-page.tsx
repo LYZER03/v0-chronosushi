@@ -2,26 +2,176 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
 import { ArrowDown, ArrowUp, DollarSign, ShoppingBag, Users, Clock } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { orders, reviews, salesData } from "@/lib/data"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import type { Order, Review, SalesData } from "@/lib/types"
+import { useToast } from "@/hooks/use-toast"
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+// Import fallback data
+import { orders as fallbackOrders, reviews as fallbackReviews, salesData as fallbackSalesData } from "@/lib/data"
 
 export function DashboardPage() {
   const [timeframe, setTimeframe] = useState("week")
+  const [loading, setLoading] = useState(true)
+  const [orders, setOrders] = useState<Order[]>([])
+  const [reviews, setReviews] = useState<Review[]>([])
+  const [salesData, setSalesData] = useState<SalesData[]>([])
+  const [stats, setStats] = useState({
+    totalSales: 0,
+    averageRating: 0,
+    orderCounts: [] as { status: string; count: number }[],
+  })
+  const [error, setError] = useState<string | null>(null)
+  const { toast } = useToast()
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        console.log("Fetching dashboard data...")
+
+        // Fetch orders
+        let ordersData: Order[] = []
+        try {
+          const ordersResponse = await fetch("/api/orders")
+          console.log("Orders response status:", ordersResponse.status)
+
+          if (ordersResponse.ok) {
+            ordersData = await ordersResponse.json()
+            console.log("Fetched orders:", ordersData.length)
+            setOrders(ordersData)
+          } else {
+            console.error("Failed to fetch orders:", await ordersResponse.text())
+            // Use fallback data
+            setOrders(fallbackOrders as unknown as Order[])
+            ordersData = fallbackOrders as unknown as Order[]
+          }
+        } catch (ordersError) {
+          console.error("Error fetching orders:", ordersError)
+          // Use fallback data
+          setOrders(fallbackOrders as unknown as Order[])
+          ordersData = fallbackOrders as unknown as Order[]
+        }
+
+        // Fetch reviews
+        let reviewsData: Review[] = []
+        try {
+          const reviewsResponse = await fetch("/api/reviews")
+          console.log("Reviews response status:", reviewsResponse.status)
+
+          if (reviewsResponse.ok) {
+            reviewsData = await reviewsResponse.json()
+            console.log("Fetched reviews:", reviewsData.length)
+            setReviews(reviewsData)
+          } else {
+            console.error("Failed to fetch reviews:", await reviewsResponse.text())
+            // Use fallback data
+            setReviews(fallbackReviews as unknown as Review[])
+            reviewsData = fallbackReviews as unknown as Review[]
+          }
+        } catch (reviewsError) {
+          console.error("Error fetching reviews:", reviewsError)
+          // Use fallback data
+          setReviews(fallbackReviews as unknown as Review[])
+          reviewsData = fallbackReviews as unknown as Review[]
+        }
+
+        // Try to fetch stats
+        try {
+          const statsResponse = await fetch("/api/stats")
+          console.log("Stats response status:", statsResponse.status)
+
+          if (statsResponse.ok) {
+            const statsData = await statsResponse.json()
+            console.log("Fetched stats:", statsData)
+
+            setStats({
+              totalSales: statsData.totalSales,
+              averageRating: statsData.averageRating,
+              orderCounts: statsData.orderCounts,
+            })
+            setSalesData(statsData.salesChartData)
+          } else {
+            console.error("Failed to fetch stats:", await statsResponse.text())
+            // Calculate basic stats from orders and reviews
+            calculateFallbackStats(ordersData, reviewsData)
+          }
+        } catch (statsError) {
+          console.error("Error fetching stats:", statsError)
+          // Calculate basic stats from orders and reviews
+          calculateFallbackStats(ordersData, reviewsData)
+        }
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error)
+        setError("Failed to load dashboard data. Using fallback data.")
+
+        // Use fallback data
+        setOrders(fallbackOrders as unknown as Order[])
+        setReviews(fallbackReviews as unknown as Review[])
+        setSalesData(fallbackSalesData)
+
+        toast({
+          title: "Error",
+          description: "Failed to load dashboard data. Using fallback data.",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    // Function to calculate basic stats from orders and reviews if the API fails
+    const calculateFallbackStats = (ordersData: Order[], reviewsData: Review[]) => {
+      console.log("Calculating fallback stats")
+
+      // Calculate total sales
+      const totalSales = ordersData.reduce((sum, order) => {
+        if (order.status !== "canceled") {
+          return (
+            sum +
+            Number(typeof order.total === "number" ? order.total : Number.parseFloat(order.total as unknown as string))
+          )
+        }
+        return sum
+      }, 0)
+
+      // Calculate average rating
+      const averageRating =
+        reviewsData.length > 0 ? reviewsData.reduce((sum, review) => sum + review.rating, 0) / reviewsData.length : 0
+
+      // Count orders by status
+      const statusCounts: Record<string, number> = {}
+      ordersData.forEach((order) => {
+        statusCounts[order.status] = (statusCounts[order.status] || 0) + 1
+      })
+
+      const orderCounts = Object.entries(statusCounts).map(([status, count]) => ({
+        status,
+        count,
+      }))
+
+      setStats({
+        totalSales,
+        averageRating,
+        orderCounts,
+      })
+
+      // Use fallback sales data if needed
+      setSalesData(fallbackSalesData)
+    }
+
+    fetchData()
+  }, [toast])
 
   // Calculate summary data
-  const totalSales = salesData.reduce((sum, day) => sum + day.amount, 0)
   const pendingOrders = orders.filter((order) => order.status === "pending").length
   const preparingOrders = orders.filter((order) => order.status === "preparing").length
   const totalOrders = orders.length
-
-  // Calculate average rating
-  const averageRating = reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length
 
   // Data for pie chart
   const statusData = [
@@ -31,8 +181,19 @@ export function DashboardPage() {
     { name: "Canceled", value: orders.filter((order) => order.status === "canceled").length, color: "#ef4444" },
   ]
 
+  if (loading) {
+    return <div className="flex justify-center p-8">Loading dashboard data...</div>
+  }
+
   return (
     <div className="flex flex-col gap-6">
+      {error && (
+        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4" role="alert">
+          <p className="font-bold">Warning</p>
+          <p>{error}</p>
+        </div>
+      )}
+
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground">Overview of your restaurant performance</p>
@@ -45,7 +206,7 @@ export function DashboardPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${totalSales.toFixed(2)}</div>
+            <div className="text-2xl font-bold">${stats.totalSales.toFixed(2)}</div>
             <div className="flex items-center text-sm text-muted-foreground">
               <ArrowUp className="mr-1 h-4 w-4 text-green-500" />
               <span className="text-green-500">12%</span>
@@ -90,7 +251,7 @@ export function DashboardPage() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{averageRating.toFixed(1)}/5</div>
+            <div className="text-2xl font-bold">{stats.averageRating.toFixed(1)}/5</div>
             <div className="flex items-center text-sm text-muted-foreground">
               <ArrowUp className="mr-1 h-4 w-4 text-green-500" />
               <span className="text-green-500">5%</span>
@@ -192,14 +353,21 @@ export function DashboardPage() {
                     <div key={order.id} className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <div>
-                          <p className="font-medium">{order.customerName}</p>
-                          <p className="text-sm text-muted-foreground">{new Date(order.date).toLocaleString()}</p>
+                          <p className="font-medium">{order.customerName || order.customer_name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {new Date(order.date || order.created_at).toLocaleString()}
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
                         <div className="text-right">
-                          <p className="font-medium">${order.total.toFixed(2)}</p>
-                          <p className="text-sm text-muted-foreground">{order.items.length} items</p>
+                          <p className="font-medium">
+                            $
+                            {typeof order.total === "number"
+                              ? order.total.toFixed(2)
+                              : Number.parseFloat(order.total as unknown as string).toFixed(2)}
+                          </p>
+                          <p className="text-sm text-muted-foreground">{order.items?.length || 0} items</p>
                         </div>
                         <OrderStatusBadge status={order.status} />
                       </div>
@@ -219,11 +387,11 @@ export function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
-                {reviews.map((review) => (
+                {reviews.slice(0, 4).map((review) => (
                   <div key={review.id} className="flex items-start gap-4">
                     <Avatar>
                       <AvatarFallback>
-                        {review.customerName
+                        {(review.customerName || review.customer_name)
                           .split(" ")
                           .map((n) => n[0])
                           .join("")}
@@ -231,7 +399,7 @@ export function DashboardPage() {
                     </Avatar>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <p className="font-medium">{review.customerName}</p>
+                        <p className="font-medium">{review.customerName || review.customer_name}</p>
                         <div className="flex">
                           {Array.from({ length: 5 }).map((_, i) => (
                             <Star
@@ -241,7 +409,9 @@ export function DashboardPage() {
                           ))}
                         </div>
                       </div>
-                      <p className="text-sm text-muted-foreground">{new Date(review.date).toLocaleDateString()}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {new Date(review.date || review.created_at).toLocaleDateString()}
+                      </p>
                       <p className="text-sm">{review.comment}</p>
                     </div>
                   </div>
@@ -252,39 +422,6 @@ export function DashboardPage() {
         </TabsContent>
       </Tabs>
     </div>
-  )
-}
-
-function Button({
-  variant = "default",
-  size = "default",
-  className,
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "default" | "outline" | "ghost"
-  size?: "default" | "sm"
-}) {
-  const variantClasses = {
-    default: "bg-primary text-primary-foreground hover:bg-primary/90",
-    outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
-    ghost: "hover:bg-accent hover:text-accent-foreground",
-  }
-
-  const sizeClasses = {
-    default: "h-10 px-4 py-2",
-    sm: "h-9 rounded-md px-3",
-  }
-
-  return (
-    <button
-      className={cn(
-        "inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-        variantClasses[variant],
-        sizeClasses[size],
-        className,
-      )}
-      {...props}
-    />
   )
 }
 
@@ -325,8 +462,4 @@ function Star(props: React.SVGProps<SVGSVGElement>) {
       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
     </svg>
   )
-}
-
-function cn(...classes: (string | undefined)[]) {
-  return classes.filter(Boolean).join(" ")
 }
