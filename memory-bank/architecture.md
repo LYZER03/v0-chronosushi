@@ -195,3 +195,12 @@ graph TD
 - Request validation
 - CORS configuration
 - Error handling without leaking sensitive info
+
+---
+
+## Incident Auth Supabase/Next.js (mai 2025)
+
+- Problème : La session Supabase n'était pas reconnue côté serveur (middleware Next.js) car stockée uniquement dans le localStorage côté client.
+- Impact : Boucle de redirection /login ↔ /, impossible d'accéder à l'app même connecté.
+- Solution : Migration vers @supabase/auth-helpers-nextjs pour synchroniser la session dans les cookies (createPagesBrowserClient côté client, createMiddlewareClient côté middleware).
+- Résultat : Auth robuste SSR/SPA, état client/serveur synchronisé, plus de bug de session ou de boucle login.

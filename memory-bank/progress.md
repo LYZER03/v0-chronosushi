@@ -124,6 +124,17 @@
    - [BUG-42] Section reordering sometimes glitches
    - [BUG-57] Image upload fails for files > 5MB
 
+3. **Authentication (Supabase/Next.js)**
+   - **(Résolu, mai 2025)**
+   - Symptôme : Après login, l'utilisateur restait bloqué sur /login malgré une session valide côté client (localStorage).
+   - Cause : Le middleware Next.js ne voyait pas la session car il ne lit que les cookies HTTP, pas le localStorage (où Supabase stocke la session côté React).
+   - Impact : Boucle de redirection /login ↔ /, impossible d'accéder à l'app même connecté.
+   - Solution :
+     - Migration vers @supabase/auth-helpers-nextjs pour synchroniser la session dans les cookies.
+     - Utilisation de createPagesBrowserClient côté client et createMiddlewareClient côté middleware.
+     - Le middleware lit désormais la session correctement dans les cookies, ce qui synchronise l'état auth client/serveur.
+   - Bénéfice : Auth robuste SSR/SPA, plus de bug de session ou de boucle login.
+
 ### Medium Priority
 1. **UI/UX**
    - Mobile navigation needs improvement

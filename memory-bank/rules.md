@@ -1,0 +1,26 @@
+- After making any changes, ALWAYS start a new clean server instance so I can test it.
+- Always kill any previously running related servers before starting a new one.
+- Always prefer simple solutions — avoid over-engineering or unnecessary abstraction.
+- Never create new code if an equivalent or similar implementation already exists.
+- Iterate on existing patterns and code before considering introducing new ones.
+- Follow the current project structure and conventions exactly. Do not deviate from existing folder organization, naming, patterns, or technologies unless explicitly instructed.
+- Avoid duplicating logic or functionality — always check if similar code already exists.
+- Your code must handle multiple environments properly: dev, test, and prod.
+- Only make changes that are:
+    - Explicitly requested
+    - Clearly and directly related to the task
+    - Confidently understood in terms of impact
+- When fixing bugs:
+    - Try to resolve them within the existing implementation
+    - Do not introduce new technologies or patterns unless all existing options have been exhausted
+- If you must change the implementation, remove the old logic to avoid duplication or drift
+- Keep the codebase very clean, consistent, and organized
+- Avoid writing one-off scripts in main files — isolate temporary or single-use logic
+- No file should exceed 200–300 lines of code. Refactor and split as needed.
+- Mocking or stubbing is allowed ONLY in test files — never in dev or production code.
+- Do not overwrite or modify the .env file without asking for and receiving explicit permission.
+- Stay laser-focused on only the areas of code relevant to the current task.
+- Do not touch unrelated parts of the application.
+- Write thorough tests for all major functionality or complex logic.
+- Do not make major architectural or pattern changes to working features unless you are explicitly told to.
+- Always think about the side effects and dependencies of your changes — what other parts of the codebase might be impacted?
